@@ -1,0 +1,143 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Trevor McCalmont"
+date: "Saturday, May 23, 2015"
+output: html_document
+---
+
+# Introduction
+
+In this project we will be using data collected from accelerometers while individuals performed various exercises. The accelerometers were attached to their belt, forearm, arm and dumbbell, and the participants performed exercises both correctly and incorrectly (variable $classe$). A value of $A$ means the exercise was performed correctly, and a value of $B-E$ were four common mistakes.
+
+We will create a prediction model based on 19,600+ observations from the accelerometers, and use this model to predict the quality of exercise from a new data set.
+
+# Upload and Clean the Data
+
+First we upload the data into R and do a few simple manipulations of the data.
+
+```{r}
+trainURL <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testURL <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+trainData <- read.csv(url(trainURL))
+testData <- read.csv(url(testURL))
+dim(trainData); dim(testData)
+```
+
+After viewing the data, we see that Column 1 is simply a row label, which will confuse our models later.
+
+```{r}
+trainData <- trainData[c(-1)]
+testData <- testData[c(-1)]
+dim(trainData); dim(testData)
+```
+
+Next we will look for variables with near zero variance and remove those from the model. They will not have a useful amount of prediction value, so this will not negatively impact the accuracy of our model.
+
+```{r}
+
+library(caret)
+
+nzv <- nearZeroVar(trainData, saveMetrics=TRUE)
+trainData <- trainData[nzv$nzv == FALSE] #train set
+testData <- testData[nzv$nzv == FALSE] #test set
+dim(trainData); dim(testData)
+```
+
+Lastly we will remove variables that have at least 50% missing values. Similarly, these will not add much value to our prediction model.
+
+```{r}
+trainDataCleaned <- trainData
+testDataCleaned <- testData
+
+for (i in 1:length(trainData)) {
+    if(sum(is.na(trainData[,i]))/nrow(trainData)>=0.5) {
+        for (j in 1:length(trainDataCleaned)) {
+            if(length(grep(names(trainData[i]), names(trainDataCleaned)[j]))==1) {
+                trainDataCleaned <- trainDataCleaned[,-j]
+                testDataCleaned <- testDataCleaned[,-j]
+            }
+        }
+    }
+}
+
+trainData <- trainDataCleaned
+testData <- testDataCleaned
+
+dim(trainData); dim(testData)
+```
+
+After cleaning the data set we are down to 58 variables.
+
+# Partition the Data
+
+Next we will partition the training data set. 60% of the data will be allocated to our training data, and 40% of the data will be saved so we can test our models before using the final test data.
+
+```{r}
+set.seed(1717)
+
+inTrain <- createDataPartition(y=trainData$classe, p = 0.6,
+                               list=FALSE)
+training <- trainData[inTrain,]
+testing <- trainData[-inTrain,]
+```
+
+# Decision Tree (RPart)
+
+First we'll look at a prediction model based on a decision tree.
+
+```{r}
+set.seed(1717)
+modRPart <- train(classe ~ ., method ="rpart", data=training)
+print(modRPart$finalModel)
+```
+
+We can plot this model using the rattle library in R. This will make the decision tree easier to visualize.
+
+```{r}
+library(rattle)
+
+fancyRpartPlot(modRPart$finalModel, cex = 0.7, shadow.offset=0)
+```
+
+Next, to check the accuracy of our model we will construct the Confusion Matrix.
+
+```{r}
+predictRPart <- predict(modRPart, newdata=testing)
+confusionMatrix(predictRPart, testing$classe)
+```
+
+We can see from the Confusion Matrix that the accuracy of this model was very close to 60%. That's not terrible given that the variable $classe$ has five potential outcomes, but we can do better.
+
+# Random Forest plot
+
+Next we'll look at a Random Forest plot. This type of model is very accurate, but takes a long time to construct and has the potential to lead to overfitting.
+
+```{r}
+set.seed(1717)
+modRF <- train(classe ~ ., method ="rf", data=training)
+print(modRF)
+print(modRF$finalModel)
+```
+
+Next, to check the accuracy of our model we will construct the Confusion Matrix.
+
+```{r}
+predictRF <- predict(modRF, newdata=testing)
+confusionMatrix(predictRF, testing$classe)
+```
+
+We can see from the Confusion Matrix that the accuracy of the Random Forest model was much better, over 99%.
+
+# Out of Sample Error
+
+We can see from the above Confusion Matrix that our in sample error rate is under 1%. Finally we will use our model to predict the true testing data set. We expect the out of sample error to be slightly higher than that of our original model, because our model was tuned to the training data set. However, our error rate should still be very low.
+
+```{r}
+
+testRF <- predict(modRF, newdata=testData); testRF
+
+```
+
+# Conclusion
+
+We used two different tree-based models to predict the quality of exercises the test subjects were doing. Random Forests (99+%) did a much better job of prediction than the Decision Tree model (60%).
